@@ -1,6 +1,6 @@
 {
   "name": "memran/marwa-error-handler",
-  "description": "PHP error/exception/shutdown handler with optional PSR-3 logger, optional Debugbar, and a professional fallback UI.",
+  "description": "PHP Errorhandler with optional PSR-3 logger, optional Debugbar, and a professional fallback UI.",
   "type": "library",
   "license": "MIT",
   "autoload": {
