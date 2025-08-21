@@ -1,6 +1,11 @@
 # memran/marwa-error-handler
 
-A tiny, framework-agnostic **PHP error/exception/shutdown handler** with:
+[![Latest Version](https://img.shields.io/packagist/v/memran/marwa-error-handler.svg)](https://packagist.org/packages/memran/marwa-error-handler)
+[![Total Downloads](https://img.shields.io/packagist/dt/memran/marwa-error-handler.svg?style=flat-square)](https://packagist.org/packages/memran/marwa-error-handler)
+[![PHP Version](https://img.shields.io/packagist/php-v/memran/marwa-error-handler)](https://php.net)
+[![License](https://img.shields.io/packagist/l/memran/marwa-error-handler)](LICENSE)
+
+A tiny, framework-agnostic **PHP Error Handler** with:
 
 - Optional **PSR-3 Logger** injection (logs if provided; no-op if not)
 - Optional **Debugbar** injection (adds exception to bar in dev)
