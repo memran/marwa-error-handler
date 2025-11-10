@@ -21,11 +21,11 @@ ErrorHandler::bootstrap(
       appName: 'MyApp',
       env: 'development',     // PROD: no details rendered
       logger: null,          // no logger injected
-      debugbar: $bar         // debugbar injected
+      debugbar: null         // debugbar injected
 );
 
 // Trigger an exception to see the generic UI
-//throw new RuntimeException('Production example: something failed');
-$bar->addException(new RuntimeException('Failed Debugbar Exception'));
+throw new RuntimeException('Production example: something failed');
+//$bar->addException(new RuntimeException('Failed Debugbar Exception'));
 // In your HTML response:
 echo (new \Marwa\DebugBar\Renderer($bar))->render();

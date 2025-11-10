@@ -83,6 +83,8 @@ final class ErrorHandler
             // 2) if we have a debugbar -> add exception AND render it NOW
             if ($this->debugbar) {
                 $this->sendToDebugbar($e);
+                echo (new \Marwa\DebugBar\Renderer($this->debugbar))->render();
+                return;
             }
 
             // 3) no debugbar -> old behavior
