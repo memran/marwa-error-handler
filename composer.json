@@ -14,9 +14,9 @@
   },
   "require-dev": {
     "phpunit/phpunit": "^10.0",
-    "memran/marwa-debugbar": "^2.0"
+    "memran/marwa-debugbar": "dev-main"
   },
-  "minimum-stability": "stable",
+  "minimum-stability": "dev",
   "prefer-stable": true,
   "scripts": {
     "test": "phpunit"
