@@ -130,6 +130,25 @@ final class ErrorHandler
 
         $this->registered = true;
     }
+    public function setLogger(?LoggerInterface $logger): self
+    {
+        $this->logger = $logger;
+        return $this;
+    }
+    public function setDebugbar(mixed $debugbar): self
+    {
+        $this->debugbar = $debugbar;
+        return $this;
+    }
+    public function setRenderer(?RendererInterface $renderer): self
+    {
+        $this->renderer = $renderer;
+        return $this;
+    }
+    public function getLogger(): ?LoggerInterface
+    {
+        return $this->logger;
+    }
 
     // --- keep setters/getters the same ---
 
