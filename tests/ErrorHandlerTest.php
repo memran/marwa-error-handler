@@ -60,7 +60,11 @@ final class ErrorHandlerTest extends TestCase
 
         $handler->register();
 
-        $registeredHandler = set_exception_handler(static fn (Throwable $throwable): never => throw $throwable);
+        $registeredHandler = set_exception_handler(
+            static function (Throwable $throwable): void {
+                throw $throwable;
+            },
+        );
         restore_exception_handler();
 
         $this->assertIsCallable($registeredHandler);
@@ -87,7 +91,11 @@ final class ErrorHandlerTest extends TestCase
 
         $handler->register();
 
-        $registeredHandler = set_exception_handler(static fn (Throwable $throwable): never => throw $throwable);
+        $registeredHandler = set_exception_handler(
+            static function (Throwable $throwable): void {
+                throw $throwable;
+            },
+        );
         restore_exception_handler();
 
         $this->assertIsCallable($registeredHandler);
