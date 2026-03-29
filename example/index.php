@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 require __DIR__ . '/../vendor/autoload.php';
 
-use Marwa\ErrorHandler\ErrorHandler;
 use Marwa\DebugBar\Debugbar;
+use Marwa\ErrorHandler\ErrorHandler;
 
 $bar = new Debugbar(true);
 //$bar->registerExceptionHandlers();
@@ -18,14 +18,10 @@ $bar->collectors()->register(\Marwa\DebugBar\Collectors\KpiCollector::class);
 $bar->collectors()->register(\Marwa\DebugBar\Collectors\ExceptionCollector::class);
 
 ErrorHandler::bootstrap(
-      appName: 'MyApp',
-      env: 'development',     // PROD: no details rendered
-      logger: null,          // no logger injected
-      debugbar: null         // debugbar injected
+    appName: 'MyApp',
+    env: 'development',
+    logger: null,
+    debugbar: $bar,
 );
 
-// Trigger an exception to see the generic UI
-throw new RuntimeException('Production example: something failed');
-//$bar->addException(new RuntimeException('Failed Debugbar Exception'));
-// In your HTML response:
-echo (new \Marwa\DebugBar\Renderer($bar))->render();
+throw new RuntimeException('Development example: exception reported to the debugbar and renderer');

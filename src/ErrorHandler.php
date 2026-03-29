@@ -4,157 +4,206 @@ declare(strict_types=1);
 
 namespace Marwa\ErrorHandler;
 
+use Marwa\ErrorHandler\Contracts\DebugReporterInterface;
 use Marwa\ErrorHandler\Contracts\RendererInterface;
+use Marwa\ErrorHandler\Support\DebugReporter;
 use Marwa\ErrorHandler\Support\FallbackRenderer;
 use Psr\Log\LoggerInterface;
 use Throwable;
 
+/**
+ * Framework-agnostic error handler with optional logging, reporter integration,
+ * and safe fallback rendering for HTTP and CLI runtimes.
+ */
 final class ErrorHandler
 {
+    private const DEV_ENVIRONMENTS = ['local', 'dev', 'development', 'debug'];
+    private const FATAL_ERROR_TYPES = [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR];
+
     private bool $registered = false;
+    private ?DebugReporterInterface $debugReporter;
 
     public function __construct(
         private string $appName = 'app',
         private string $env = 'production',
         private ?LoggerInterface $logger = null,
-        private mixed $debugbar = null,             // our target
-        private ?RendererInterface $renderer = null
-    ) {}
+        mixed $debugbar = null,
+        private ?RendererInterface $renderer = null,
+    ) {
+        $this->debugReporter = DebugReporter::from($debugbar);
+    }
 
     public static function bootstrap(
         string $appName = 'app',
         string $env = 'production',
         ?LoggerInterface $logger = null,
         mixed $debugbar = null,
-        ?RendererInterface $renderer = null
+        ?RendererInterface $renderer = null,
     ): self {
-        $h = new self($appName, $env, $logger, $debugbar, $renderer);
-        $h->register();
-        return $h;
+        $handler = new self($appName, $env, $logger, $debugbar, $renderer);
+        $handler->register();
+
+        return $handler;
     }
 
+    /**
+     * Registers PHP error, exception, and shutdown handlers once.
+     */
     public function register(): void
     {
         if ($this->registered) {
             return;
         }
 
-        $dev = $this->isDev();
         $this->renderer ??= new FallbackRenderer();
+        $this->configurePhpRuntime();
 
-        @ini_set('display_errors', $dev ? '1' : '0');
-        @ini_set('log_errors', '0');
-        error_reporting(E_ALL);
+        set_error_handler($this->handlePhpError(...));
+        set_exception_handler($this->handleException(...));
+        register_shutdown_function($this->handleShutdown(...));
 
-        set_error_handler(function (int $errno, string $errstr, ?string $file = null, ?int $line = null): bool {
-            if (!(error_reporting() & $errno)) {
-                return true;
-            }
-
-            $this->logger?->error('php_error', [
-                '_origin' => 'system',
-                'app'     => $this->appName,
-                'env'     => $this->env,
-                'errno'   => $this->errnoName($errno),
-                'message' => $errstr,
-                'file'    => $file,
-                'line'    => $line,
-            ]);
-
-            // swallow: debugbar will show it if we wire notices too
-            return true;
-        });
-
-        // ⬇️ THIS is the part we changed
-        set_exception_handler(function (Throwable $e) use ($dev): void {
-            // 1) log it
-            $this->logger?->critical('uncaught_exception', [
-                '_origin' => 'system',
-                'app'     => $this->appName,
-                'env'     => $this->env,
-                'type'    => $e::class,
-                'code'    => (int)$e->getCode(),
-                'message' => $e->getMessage(),
-                'file'    => $e->getFile(),
-                'line'    => $e->getLine(),
-                '_trace'  => $e->getTrace(),
-            ]);
-
-            // 2) if we have a debugbar -> add exception AND render it NOW
-            if ($this->debugbar) {
-                $this->sendToDebugbar($e);
-                echo (new \Marwa\DebugBar\Renderer($this->debugbar))->render();
-                return;
-            }
-
-            // 3) no debugbar -> old behavior
-            if (PHP_SAPI !== 'cli') {
-                http_response_code(500);
-                $this->renderer->renderException($e, $this->appName, $dev);
-            } else {
-                $this->renderer->renderCli($e, $this->appName, $dev);
-            }
-        });
-
-
-        register_shutdown_function(function (): void {
-
-            $err = error_get_last();
-            if ($err && in_array($err['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true)) {
-                if ($this->logger) {
-                    $this->logger->alert('fatal_shutdown', [
-                        '_origin' => 'system',
-                        'app'     => $this->appName,
-                        'env'     => $this->env,
-                        'errno'   => $this->errnoName($err['type']),
-                        'message' => $err['message'] ?? null,
-                        'file'    => $err['file'] ?? null,
-                        'line'    => $err['line'] ?? null,
-                    ]);
-                } elseif (PHP_SAPI !== 'cli') {
-
-                    $this->renderer?->renderGeneric($this->appName);
-                } else {
-                    fwrite(STDERR, "[fatal][{$this->appName}] {$err['message']} @ {$err['file']}:{$err['line']}\n");
-                }
-            }
-        });
-
-        $this->logger?->info('error_handler_booted', [
+        $this->safeLog('info', 'error_handler_booted', [
             '_origin' => 'system',
-            'app'     => $this->appName,
-            'env'     => $this->env,
-            'php'     => PHP_VERSION,
-            'sapi'    => PHP_SAPI,
+            'app' => $this->appName,
+            'env' => $this->env,
+            'php' => PHP_VERSION,
+            'sapi' => PHP_SAPI,
         ]);
 
         $this->registered = true;
     }
+
     public function setLogger(?LoggerInterface $logger): self
     {
         $this->logger = $logger;
+
         return $this;
     }
+
     public function setDebugbar(mixed $debugbar): self
     {
-        $this->debugbar = $debugbar;
+        $this->debugReporter = DebugReporter::from($debugbar);
+
         return $this;
     }
+
     public function setRenderer(?RendererInterface $renderer): self
     {
         $this->renderer = $renderer;
+
         return $this;
     }
+
     public function getLogger(): ?LoggerInterface
     {
         return $this->logger;
     }
 
-    // --- keep setters/getters the same ---
-
-    private function isDev(): bool
+    public function isDevelopment(): bool
     {
-        return in_array(strtolower($this->env), ['local', 'dev', 'development', 'debug'], true);
+        return in_array(strtolower($this->env), self::DEV_ENVIRONMENTS, true);
+    }
+
+    private function configurePhpRuntime(): void
+    {
+        $displayErrors = $this->isDevelopment() ? '1' : '0';
+
+        @ini_set('display_errors', $displayErrors);
+        @ini_set('log_errors', '0');
+        error_reporting(E_ALL);
+    }
+
+    private function handlePhpError(int $errno, string $errstr, ?string $file = null, ?int $line = null): bool
+    {
+        if ((error_reporting() & $errno) === 0) {
+            return false;
+        }
+
+        $this->safeLog('error', 'php_error', [
+            '_origin' => 'system',
+            'app' => $this->appName,
+            'env' => $this->env,
+            'errno' => $this->errnoName($errno),
+            'message' => $errstr,
+            'file' => $file,
+            'line' => $line,
+        ]);
+
+        return true;
+    }
+
+    private function handleException(Throwable $throwable): void
+    {
+        $this->safeLog('critical', 'uncaught_exception', [
+            '_origin' => 'system',
+            'app' => $this->appName,
+            'env' => $this->env,
+            'type' => $throwable::class,
+            'code' => (int) $throwable->getCode(),
+            'message' => $throwable->getMessage(),
+            'file' => $throwable->getFile(),
+            'line' => $throwable->getLine(),
+            '_trace' => $throwable->getTrace(),
+        ]);
+
+        $this->debugReporter?->report($throwable);
+
+        if (PHP_SAPI === 'cli') {
+            $this->renderer?->renderCli($throwable, $this->appName, $this->isDevelopment());
+
+            return;
+        }
+
+        $this->renderer?->renderException($throwable, $this->appName, $this->isDevelopment());
+    }
+
+    private function handleShutdown(): void
+    {
+        $error = error_get_last();
+
+        if ($error === null || !in_array($error['type'], self::FATAL_ERROR_TYPES, true)) {
+            return;
+        }
+
+        $this->safeLog('alert', 'fatal_shutdown', [
+            '_origin' => 'system',
+            'app' => $this->appName,
+            'env' => $this->env,
+            'errno' => $this->errnoName($error['type']),
+            'message' => $error['message'],
+            'file' => $error['file'],
+            'line' => $error['line'],
+        ]);
+
+        if (PHP_SAPI === 'cli') {
+            fwrite(STDERR, sprintf(
+                "[fatal][%s] %s @ %s:%s\n",
+                $this->appName,
+                $error['message'],
+                $error['file'],
+                (string) $error['line'],
+            ));
+
+            return;
+        }
+
+        $this->renderer?->renderGeneric($this->appName);
+    }
+
+    /**
+     * @param array<string, mixed> $context
+     */
+    private function safeLog(string $level, string $message, array $context = []): void
+    {
+        if ($this->logger === null) {
+            return;
+        }
+
+        try {
+            $this->logger->log($level, $message, $context);
+        } catch (Throwable) {
+            // Logging failures must not cascade during exception handling.
+        }
     }
 
     private function errnoName(int $errno): string
@@ -177,35 +226,5 @@ final class ErrorHandler
             E_USER_DEPRECATED => 'E_USER_DEPRECATED',
             default => 'E_UNKNOWN',
         };
-    }
-
-    private function sendToDebugbar(Throwable $e): void
-    {
-        if (!$this->debugbar) return;
-
-        if (is_callable($this->debugbar)) {
-            try {
-                ($this->debugbar)($e);
-            } catch (\Throwable) {
-            }
-            return;
-        }
-
-        if (is_object($this->debugbar)) {
-            if (method_exists($this->debugbar, 'addException')) {
-                try {
-                    $this->debugbar->addException($e);
-                } catch (\Throwable) {
-                }
-                return;
-            }
-            if (method_exists($this->debugbar, 'addThrowable')) {
-                try {
-                    $this->debugbar->addThrowable($e);
-                } catch (\Throwable) {
-                }
-                return;
-            }
-        }
     }
 }

@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace Marwa\ErrorHandler\Support;
@@ -6,15 +7,15 @@ namespace Marwa\ErrorHandler\Support;
 use Marwa\ErrorHandler\Contracts\RendererInterface;
 use Throwable;
 
+/**
+ * Renders safe fallback pages when no framework or custom renderer is present.
+ */
 final class FallbackRenderer implements RendererInterface
 {
     public function renderException(Throwable $e, string $appName, bool $dev): void
     {
-        if (!headers_sent()) {
-            http_response_code(500);
-            header('Content-Type: text/html; charset=UTF-8');
-            header('X-Content-Type-Options: nosniff');
-        }
+        $this->sendHtmlHeaders();
+
         echo $dev
             ? $this->devExceptionHtml($e, $appName, $this->requestId(), $this->utcNow())
             : $this->prodGenericHtml($appName, $this->requestId(), $this->utcNow());
@@ -22,50 +23,79 @@ final class FallbackRenderer implements RendererInterface
 
     public function renderGeneric(string $appName): void
     {
-        if (!headers_sent()) {
-            http_response_code(500);
-            header('Content-Type: text/html; charset=UTF-8');
-            header('X-Content-Type-Options: nosniff');
-        }
+        $this->sendHtmlHeaders();
+
         echo $this->prodGenericHtml($appName, $this->requestId(), $this->utcNow());
     }
 
     public function renderCli(Throwable $e, string $appName, bool $dev): void
     {
-        $rid = $this->requestId();
+        $requestId = $this->requestId();
+
         if ($dev) {
-            fwrite(STDERR, "[500][{$appName}] " . get_class($e) . ": {$e->getMessage()} @ {$e->getFile()}:{$e->getLine()} [rid:{$rid}]\n");
-            $i = 0;
-            foreach ($e->getTrace() as $t) {
-                $file = (string)($t['file'] ?? '-');
-                $line = (int)($t['line'] ?? 0);
-                $func = (string)(($t['class'] ?? '') . ($t['type'] ?? '') . ($t['function'] ?? ''));
-                fwrite(STDERR, "  #{$i} {$file}:{$line} {$func}\n");
-                if (++$i >= 10) break;
-            }
-            if ($i === 0) {
-                foreach (explode("\n", $e->getTraceAsString()) as $line) {
-                    fwrite(STDERR, "  " . $line . "\n");
+            fwrite(
+                STDERR,
+                sprintf(
+                    "[500][%s] %s: %s @ %s:%d [rid:%s]\n",
+                    $appName,
+                    $e::class,
+                    $e->getMessage(),
+                    $e->getFile(),
+                    $e->getLine(),
+                    $requestId,
+                ),
+            );
+
+            $index = 0;
+            foreach ($e->getTrace() as $frame) {
+                $file = (string) ($frame['file'] ?? '-');
+                $line = (int) ($frame['line'] ?? 0);
+                $function = (string) (($frame['class'] ?? '') . ($frame['type'] ?? '') . $frame['function']);
+                fwrite(STDERR, sprintf("  #%d %s:%d %s\n", $index, $file, $line, $function));
+
+                if (++$index >= 10) {
+                    break;
                 }
             }
-        } else {
-            fwrite(STDERR, "[500][{$appName}] An error occurred. [rid:{$rid}]\n");
+
+            if ($index === 0) {
+                foreach (preg_split('/\r\n|\r|\n/', $e->getTraceAsString()) ?: [] as $traceLine) {
+                    fwrite(STDERR, sprintf("  %s\n", $traceLine));
+                }
+            }
+
+            return;
         }
+
+        fwrite(STDERR, sprintf("[500][%s] An error occurred. [rid:%s]\n", $appName, $requestId));
     }
 
-    /* ---------- Internals / Theming (auto light/dark) ---------- */
-
-    private function devExceptionHtml(Throwable $e, string $brand, string $rid, string $ts): string
+    private function sendHtmlHeaders(): void
     {
-        $esc = static fn(string $s) => htmlspecialchars($s, ENT_QUOTES, 'UTF-8');
-        $msg = $esc((string)$e->getMessage());
-        $cls = $esc((string)$e::class);
-        $fil = $esc((string)$e->getFile());
-        $lin = (int)$e->getLine();
+        if (headers_sent()) {
+            return;
+        }
 
-        $traceHtml = $this->buildTraceHtml($e, $esc);
-        $phpVersion = PHP_VERSION;
-        $phpSapi = PHP_SAPI;
+        http_response_code(500);
+        header('Content-Type: text/html; charset=UTF-8');
+        header('Cache-Control: no-store, private');
+        header('X-Content-Type-Options: nosniff');
+        header('X-Frame-Options: DENY');
+    }
+
+    private function devExceptionHtml(Throwable $e, string $appName, string $requestId, string $timestamp): string
+    {
+        $message = $this->escape($e->getMessage());
+        $className = $this->escape($e::class);
+        $file = $this->escape($e->getFile());
+        $line = (int) $e->getLine();
+        $brand = $this->escape($appName);
+        $safeRequestId = $this->escape($requestId);
+        $safeTimestamp = $this->escape($timestamp);
+        $traceHtml = $this->buildTraceHtml($e);
+        $phpVersion = $this->escape(PHP_VERSION);
+        $phpSapi = $this->escape(PHP_SAPI);
+
         return <<<HTML
 <!doctype html>
 <html lang="en">
@@ -73,17 +103,14 @@ final class FallbackRenderer implements RendererInterface
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<title>{$brand} • Exception</title>
+<title>{$brand} | Exception</title>
 <style>
-/* Base (light theme defaults) */
 :root{
   --bg:#f8fafc; --bg-grad:#ffffff;
   --card:#ffffff; --muted:#64748b; --fg:#0f172a;
   --accent:#0ea5e9; --bad:#dc2626; --border:rgba(2,6,23,.1);
   --shadow:0 10px 30px rgba(2,6,23,.08);
 }
-
-/* Auto dark theme */
 @media (prefers-color-scheme: dark) {
   :root{
     --bg:#0f172a; --bg-grad:#0b1220;
@@ -92,7 +119,6 @@ final class FallbackRenderer implements RendererInterface
     --shadow:0 10px 30px rgba(0,0,0,.35);
   }
 }
-
 *{box-sizing:border-box}
 body{margin:0;background:linear-gradient(180deg,var(--bg),var(--bg-grad));color:var(--fg);
      font:400 14px/1.45 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial}
@@ -124,22 +150,22 @@ h1{margin:0 0 10px;font-size:18px}
         <div class="badge">Dev Exception</div>
       </div>
       <div class="body">
-        <h1><span class="code">{$cls}</span>: {$msg}</h1>
-        <div class="meta">Thrown at <b>{$fil}</b>:<b>{$lin}</b></div>
+        <h1><span class="code">{$className}</span>: {$message}</h1>
+        <div class="meta">Thrown at <b>{$file}</b>:<b>{$line}</b></div>
 
         <div class="section">Details</div>
         <div class="kv">
           <b>Status</b><span>500 Internal Server Error</span>
-          <b>Request ID</b><span>{$rid}</span>
-          <b>When</b><span>{$ts}</span>
-          <b>PHP</b><span>{$phpVersion} • {$phpSapi}</span>
+          <b>Request ID</b><span>{$safeRequestId}</span>
+          <b>When</b><span>{$safeTimestamp}</span>
+          <b>PHP</b><span>{$phpVersion} | {$phpSapi}</span>
         </div>
 
         <div class="section">Trace (top 12)</div>
         <div class="trace">{$traceHtml}</div>
       </div>
       <div class="footer">
-        <div>This is a development-only page (no logger/debugbar detected).</div>
+        <div>This is a development-only page rendered by the fallback renderer.</div>
         <div>&copy; {$brand}</div>
       </div>
     </div>
@@ -149,9 +175,12 @@ h1{margin:0 0 10px;font-size:18px}
 HTML;
     }
 
-    private function prodGenericHtml(string $brand, string $rid, string $ts): string
+    private function prodGenericHtml(string $appName, string $requestId, string $timestamp): string
     {
-        $title = "{$brand} • Error";
+        $brand = $this->escape($appName);
+        $safeRequestId = $this->escape($requestId);
+        $safeTimestamp = $this->escape($timestamp);
+
         return <<<HTML
 <!doctype html>
 <html lang="en">
@@ -159,7 +188,7 @@ HTML;
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<title>{$title}</title>
+<title>{$brand} | Error</title>
 <style>
 :root{
   --bg:#f8fafc; --bg-grad:#ffffff;
@@ -198,7 +227,7 @@ h1{margin:0 0 10px;font-size:20px}
         <h1>Something went wrong</h1>
         <div>Please try again later.</div>
         <div class="badge">500 Internal Server Error</div>
-        <div class="meta">Request ID: {$rid} • {$ts}</div>
+        <div class="meta">Request ID: {$safeRequestId} | {$safeTimestamp}</div>
       </div>
       <div class="footer">&copy; {$brand}</div>
     </div>
@@ -208,29 +237,46 @@ h1{margin:0 0 10px;font-size:20px}
 HTML;
     }
 
-    /** Build the trace HTML safely. Falls back to getTraceAsString() if needed. */
-    private function buildTraceHtml(Throwable $e, callable $esc): string
+    private function buildTraceHtml(Throwable $e): string
     {
         $rows = [];
         $trace = $e->getTrace();
 
-        if (!empty($trace)) {
-            $i = 0;
-            foreach ($trace as $t) {
-                $file = $esc((string)($t['file'] ?? '-'));
-                $line = (int)($t['line'] ?? 0);
-                $call = $esc((string)(($t['class'] ?? '') . ($t['type'] ?? '') . ($t['function'] ?? '')));
-                $rows[] = "<div class=\"trace-row\"><code>#{$i}</code> <span>{$file}:{$line}</span> <em>{$call}</em></div>";
-                if (++$i >= 12) break;
+        if ($trace !== []) {
+            $index = 0;
+
+            foreach ($trace as $frame) {
+                $file = $this->escape((string) ($frame['file'] ?? '-'));
+                $line = (int) ($frame['line'] ?? 0);
+                $call = $this->escape((string) (($frame['class'] ?? '') . ($frame['type'] ?? '') . $frame['function']));
+                $rows[] = sprintf(
+                    '<div class="trace-row"><code>#%d</code> <span>%s:%d</span> <em>%s</em></div>',
+                    $index,
+                    $file,
+                    $line,
+                    $call,
+                );
+
+                if (++$index >= 12) {
+                    break;
+                }
             }
         } else {
-            $lines = preg_split('/\r\n|\r|\n/', $e->getTraceAsString()) ?: [];
-            $i = 0;
-            foreach ($lines as $line) {
-                $rows[] = '<div class="trace-row"><code>#'.$i.'</code> <span>'.$esc($line).'</span></div>';
-                if (++$i >= 12) break;
+            $index = 0;
+
+            foreach (preg_split('/\r\n|\r|\n/', $e->getTraceAsString()) ?: [] as $traceLine) {
+                $rows[] = sprintf(
+                    '<div class="trace-row"><code>#%d</code> <span>%s</span></div>',
+                    $index,
+                    $this->escape($traceLine),
+                );
+
+                if (++$index >= 12) {
+                    break;
+                }
             }
-            if ($i === 0) {
+
+            if ($index === 0) {
                 $rows[] = '<div class="trace-row"><em>No trace available.</em></div>';
             }
         }
@@ -245,7 +291,23 @@ HTML;
 
     private function requestId(): string
     {
-        $s = $_SERVER ?? [];
-        return $s['HTTP_X_REQUEST_ID'] ?? $s['HTTP_X_CORRELATION_ID'] ?? ('r-' . bin2hex(random_bytes(6)));
+        foreach (['HTTP_X_REQUEST_ID', 'HTTP_X_CORRELATION_ID'] as $headerName) {
+            $candidate = $_SERVER[$headerName] ?? null;
+
+            if (is_string($candidate) && preg_match('/\A[a-zA-Z0-9._:-]{1,128}\z/', $candidate) === 1) {
+                return $candidate;
+            }
+        }
+
+        try {
+            return 'r-' . bin2hex(random_bytes(6));
+        } catch (Throwable) {
+            return 'r-' . str_replace('.', '', uniqid('', true));
+        }
+    }
+
+    private function escape(string $value): string
+    {
+        return htmlspecialchars($value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
     }
 }

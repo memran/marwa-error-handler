@@ -1,8 +1,15 @@
 {
   "name": "memran/marwa-error-handler",
-  "description": "PHP Errorhandler with optional PSR-3 logger, optional Debugbar, and a professional fallback UI.",
+  "description": "Framework-agnostic PHP error handling with PSR-3 logging, optional debug reporting, and safe fallback rendering.",
   "type": "library",
   "license": "MIT",
+  "keywords": [
+    "error-handler",
+    "php",
+    "psr-3",
+    "exception",
+    "debug"
+  ],
   "autoload": {
     "psr-4": {
       "Marwa\\ErrorHandler\\": "src/"
@@ -13,12 +20,24 @@
     "psr/log": "^3.0"
   },
   "require-dev": {
-    "phpunit/phpunit": "^10.0",
-    "memran/marwa-debugbar": "dev-main"
+    "friendsofphp/php-cs-fixer": "^3.80",
+    "phpstan/phpstan": "^2.1",
+    "phpunit/phpunit": "^10.0"
   },
-  "minimum-stability": "dev",
   "prefer-stable": true,
+  "config": {
+    "sort-packages": true
+  },
   "scripts": {
-    "test": "phpunit"
+    "test": "phpunit",
+    "test:coverage": "phpunit --coverage-text",
+    "analyse": "phpstan analyse src --debug --memory-limit=512M",
+    "lint": "php-cs-fixer fix --dry-run --diff --sequential",
+    "fix": "php-cs-fixer fix --sequential",
+    "ci": [
+      "@lint",
+      "@analyse",
+      "@test"
+    ]
   }
 }

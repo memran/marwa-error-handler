@@ -10,7 +10,7 @@ ErrorHandler::bootstrap(
     appName: 'MyApp',
     env: 'production',     // PROD: no details rendered
     logger: null,          // no logger injected
-    debugbar: null         // no debugbar injected
+    debugbar: null,         // no debugbar injected
 );
 
 
