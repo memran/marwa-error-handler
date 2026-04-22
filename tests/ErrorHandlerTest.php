@@ -25,6 +25,26 @@ final class ErrorHandlerTest extends TestCase
         $this->assertSame('TestApp', $logger->records[0]['context']['app']);
     }
 
+    public function testPhpErrorLoggingUsesNamedErrnoContext(): void
+    {
+        $logger = new ArrayLogger();
+        $handler = new ErrorHandler(
+            appName: 'TestApp',
+            env: 'production',
+            logger: $logger,
+        );
+
+        $handler->register();
+
+        $registeredHandler = set_error_handler(static fn (): bool => true);
+        restore_error_handler();
+
+        $this->assertIsCallable($registeredHandler);
+        $this->assertTrue($registeredHandler(E_USER_NOTICE, 'notice message', __FILE__, __LINE__));
+        $this->assertSame('php_error', $logger->records[1]['message']);
+        $this->assertSame('E_USER_NOTICE', $logger->records[1]['context']['errno']);
+    }
+
     public function testMaskedPhpErrorsFallBackToNativeHandler(): void
     {
         $handler = new ErrorHandler(appName: 'TestApp', env: 'production');
