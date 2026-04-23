@@ -93,6 +93,7 @@ final class FallbackRenderer implements RendererInterface
         $safeRequestId = $this->escape($requestId);
         $safeTimestamp = $this->escape($timestamp);
         $traceHtml = $this->buildTraceHtml($e);
+        $copyText = $this->escapeAttribute($this->buildCopyText($e, $appName, $requestId, $timestamp));
         $phpVersion = $this->escape(PHP_VERSION);
         $phpSapi = $this->escape(PHP_SAPI);
 
@@ -139,6 +140,10 @@ h1{margin:0 0 10px;font-size:18px}
 .trace-row{display:flex;gap:10px;padding:6px 0;border-bottom:1px dashed var(--border)}
 .trace-row:last-child{border-bottom:0}
 .footer{display:flex;justify-content:space-between;align-items:center;padding:14px 20px;border-top:1px solid var(--border);color:var(--muted);font-size:12px}
+.footer-right{display:flex;align-items:center;gap:12px}
+.copy-btn{background:color-mix(in oklab, var(--accent) 12%, transparent);border:1px solid color-mix(in oklab, var(--accent) 30%, transparent);color:var(--accent);padding:5px 10px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;transition:all .15s}
+.copy-btn:hover{background:color-mix(in oklab, var(--accent) 20%, transparent);border-color:color-mix(in oklab, var(--accent) 50%, transparent)}
+.copy-btn.copied{background:color-mix(in oklab, #22c55e 15%, transparent);border-color:color-mix(in oklab, #22c55e 40%, transparent);color:#22c55e}
 .code{color:var(--bad)}
 </style>
 </head>
@@ -164,12 +169,18 @@ h1{margin:0 0 10px;font-size:18px}
         <div class="section">Trace (top 12)</div>
         <div class="trace">{$traceHtml}</div>
       </div>
-      <div class="footer">
+<div class="footer">
         <div>This is a development-only page rendered by the fallback renderer.</div>
-        <div>&copy; {$brand}</div>
+        <div class="footer-right">
+          <button class="copy-btn" onclick="copyError(this)" data-error="{$copyText}">Copy Error</button>
+          <div>&copy; {$brand}</div>
+        </div>
       </div>
     </div>
   </div>
+  <script>
+  function copyError(btn){var txt=btn.getAttribute('data-error')||'';if(navigator.clipboard&&window.isSecureContext){navigator.clipboard.writeText(txt).then(function(){showCopied(btn)}).catch(function(){fallbackCopy(txt,btn)})}else{fallbackCopy(txt,btn)}}function showCopied(btn){btn.classList.add('copied');btn.textContent='Copied!';setTimeout(function(){btn.classList.remove('copied');btn.textContent='Copy Error'},2000)}function fallbackCopy(text,btn){var ta=document.createElement('textarea');ta.value=text;ta.style.cssText='position:fixed;top:-9999px;left:-9999px';document.body.appendChild(ta);ta.focus();ta.select();try{document.execCommand('copy');showCopied(btn)}catch(err){btn.textContent='Failed'};document.body.removeChild(ta)}
+  </script>
 </body>
 </html>
 HTML;
@@ -284,6 +295,33 @@ HTML;
         return implode('', $rows);
     }
 
+    private function buildCopyText(Throwable $e, string $appName, string $requestId, string $timestamp): string
+    {
+        $lines = [
+            'Exception: ' . $e::class . ': ' . $e->getMessage(),
+            'File: ' . $e->getFile() . ':' . $e->getLine(),
+            'Request ID: ' . $requestId,
+            'Timestamp: ' . $timestamp,
+            'PHP: ' . PHP_VERSION . ' | ' . PHP_SAPI,
+            '',
+            'Stack Trace:',
+        ];
+
+        foreach ($e->getTrace() as $index => $frame) {
+            $file = $frame['file'] ?? '-';
+            $line = $frame['line'] ?? 0;
+            $call = ($frame['class'] ?? '') . ($frame['type'] ?? '') . ($frame['function'] ?? '?') . '()';
+            $lines[] = sprintf('  #%d %s:%d %s', $index, $file, $line, $call);
+
+            if ($index >= 11) {
+                $lines[] = '  ... (truncated)';
+                break;
+            }
+        }
+
+        return implode("\n", $lines);
+    }
+
     private function utcNow(): string
     {
         return gmdate('Y-m-d H:i:s \U\T\C');
@@ -309,5 +347,10 @@ HTML;
     private function escape(string $value): string
     {
         return htmlspecialchars($value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    }
+
+    private function escapeAttribute(string $value): string
+    {
+        return htmlspecialchars($value, ENT_COMPAT | ENT_SUBSTITUTE, 'UTF-8');
     }
 }
