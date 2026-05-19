@@ -15,7 +15,7 @@ final class FileLogger extends AbstractLogger
 
     /**
      * @param mixed $level
-     * @param mixed $message
+     * @param string|Stringable $message
      * @param array<string, mixed> $context
      */
     public function log($level, Stringable|string $message, array $context = []): void
@@ -28,11 +28,24 @@ final class FileLogger extends AbstractLogger
 
         $entry = [
             'timestamp' => gmdate('c'),
-            'level' => (string) $level,
+            'level' => $this->normalizeLevel($level),
             'message' => (string) $message,
             'context' => $context,
         ];
 
         @error_log((string) json_encode($entry, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . PHP_EOL, 3, $this->path);
+    }
+
+    private function normalizeLevel(mixed $level): string
+    {
+        if (is_string($level)) {
+            return $level;
+        }
+
+        if ($level instanceof Stringable) {
+            return (string) $level;
+        }
+
+        return 'unknown';
     }
 }

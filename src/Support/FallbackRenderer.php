@@ -306,7 +306,7 @@ HTML;
         foreach ($e->getTrace() as $index => $frame) {
             $file = $frame['file'] ?? '-';
             $line = $frame['line'] ?? 0;
-            $call = ($frame['class'] ?? '') . ($frame['type'] ?? '') . ($frame['function'] ?? '?') . '()';
+            $call = ($frame['class'] ?? '') . ($frame['type'] ?? '') . $frame['function'] . '()';
             $lines[] = sprintf('  #%d %s:%d %s', $index, $file, $line, $call);
 
             if ($index >= 11) {
