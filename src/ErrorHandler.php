@@ -8,6 +8,7 @@ use Marwa\ErrorHandler\Contracts\DebugReporterInterface;
 use Marwa\ErrorHandler\Contracts\RendererInterface;
 use Marwa\ErrorHandler\Support\DebugReporter;
 use Marwa\ErrorHandler\Support\FallbackRenderer;
+use Marwa\ErrorHandler\Support\FileLogger;
 use Psr\Log\LoggerInterface;
 use Throwable;
 
@@ -22,14 +23,19 @@ final class ErrorHandler
 
     private bool $registered = false;
     private ?DebugReporterInterface $debugReporter;
+    private string $env;
 
     public function __construct(
         private string $appName = 'app',
-        private string $env = 'production',
+        string $env = 'production',
         private ?LoggerInterface $logger = null,
         mixed $debugbar = null,
         private ?RendererInterface $renderer = null,
+        ?string $logFile = null,
+        private ?bool $displayDetails = null,
     ) {
+        $this->env = $env;
+        $this->logger ??= $logFile !== null ? new FileLogger($logFile) : null;
         $this->debugReporter = DebugReporter::from($debugbar);
     }
 
@@ -39,8 +45,10 @@ final class ErrorHandler
         ?LoggerInterface $logger = null,
         mixed $debugbar = null,
         ?RendererInterface $renderer = null,
+        ?string $logFile = null,
+        ?bool $displayDetails = null,
     ): self {
-        $handler = new self($appName, $env, $logger, $debugbar, $renderer);
+        $handler = new self($appName, $env, $logger, $debugbar, $renderer, $logFile, $displayDetails);
         $handler->register();
 
         return $handler;
@@ -94,6 +102,20 @@ final class ErrorHandler
         return $this;
     }
 
+    public function setDisplayDetails(?bool $displayDetails): self
+    {
+        $this->displayDetails = $displayDetails;
+
+        return $this;
+    }
+
+    public function setLogFile(?string $logFile): self
+    {
+        $this->logger = $logFile !== null ? new FileLogger($logFile) : null;
+
+        return $this;
+    }
+
     public function getLogger(): ?LoggerInterface
     {
         return $this->logger;
@@ -104,9 +126,14 @@ final class ErrorHandler
         return in_array(strtolower($this->env), self::DEV_ENVIRONMENTS, true);
     }
 
+    public function shouldDisplayDetails(): bool
+    {
+        return $this->displayDetails ?? $this->isDevelopment();
+    }
+
     private function configurePhpRuntime(): void
     {
-        $displayErrors = $this->isDevelopment() ? '1' : '0';
+        $displayErrors = $this->shouldDisplayDetails() ? '1' : '0';
 
         @ini_set('display_errors', $displayErrors);
         @ini_set('log_errors', '0');
@@ -149,12 +176,12 @@ final class ErrorHandler
         $this->debugReporter?->report($throwable);
 
         if (PHP_SAPI === 'cli') {
-            $this->renderer?->renderCli($throwable, $this->appName, $this->isDevelopment());
+            $this->renderer?->renderCli($throwable, $this->appName, $this->shouldDisplayDetails());
 
             return;
         }
 
-        $this->renderer?->renderException($throwable, $this->appName, $this->isDevelopment());
+        $this->renderer?->renderException($throwable, $this->appName, $this->shouldDisplayDetails());
     }
 
     private function handleShutdown(): void
@@ -226,4 +253,5 @@ final class ErrorHandler
             default => 'E_UNKNOWN',
         };
     }
+
 }

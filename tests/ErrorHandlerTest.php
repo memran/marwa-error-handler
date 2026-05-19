@@ -10,6 +10,13 @@ use Psr\Log\AbstractLogger;
 
 final class ErrorHandlerTest extends TestCase
 {
+    protected function tearDown(): void
+    {
+        parent::tearDown();
+
+        unset($_SERVER['HTTP_X_REQUEST_ID']);
+    }
+
     public function testBootstrapLogsBootEvent(): void
     {
         $logger = new ArrayLogger();
@@ -126,6 +133,69 @@ final class ErrorHandlerTest extends TestCase
         $this->assertInstanceOf(RuntimeException::class, $renderer->lastThrowable);
     }
 
+    public function testProductionCanLogToFileWhileRenderingSafeOutput(): void
+    {
+        $logFile = sys_get_temp_dir() . '/marwa-error-handler-' . bin2hex(random_bytes(6)) . '.log';
+        $renderer = new SpyRenderer();
+        $handler = new ErrorHandler(
+            appName: 'TestApp',
+            env: 'production',
+            renderer: $renderer,
+            logFile: $logFile,
+        );
+
+        $handler->register();
+
+        $registeredHandler = set_exception_handler(
+            static function (Throwable $throwable): void {
+                throw $throwable;
+            },
+        );
+        restore_exception_handler();
+
+        $this->assertIsCallable($registeredHandler);
+
+        $registeredHandler(new RuntimeException('Keep this out of the response'));
+
+        $this->assertSame('cli', $renderer->lastMethod);
+        $this->assertFalse($renderer->lastDev);
+        $this->assertFileExists($logFile);
+
+        $logContents = (string) file_get_contents($logFile);
+
+        $this->assertStringContainsString('uncaught_exception', $logContents);
+        $this->assertStringContainsString('Keep this out of the response', $logContents);
+
+        unlink($logFile);
+    }
+
+    public function testDisplayDetailsCanBeForcedOffInDevelopment(): void
+    {
+        $renderer = new SpyRenderer();
+        $handler = new ErrorHandler(
+            appName: 'TestApp',
+            env: 'development',
+            renderer: $renderer,
+            displayDetails: false,
+        );
+
+        $handler->register();
+
+        $registeredHandler = set_exception_handler(
+            static function (Throwable $throwable): void {
+                throw $throwable;
+            },
+        );
+        restore_exception_handler();
+
+        $this->assertIsCallable($registeredHandler);
+
+        $registeredHandler(new RuntimeException('Hidden in development'));
+
+        $this->assertSame('cli', $renderer->lastMethod);
+        $this->assertFalse($renderer->lastDev);
+    }
+
     public function testFallbackRendererEscapesDynamicValues(): void
     {
         $_SERVER['HTTP_X_REQUEST_ID'] = 'trace-123';
@@ -157,11 +227,29 @@ final class ErrorHandlerTest extends TestCase
         ob_start();
         $renderer->renderGeneric('TestApp');
         $output = (string) ob_get_clean();
-
-        unset($_SERVER['HTTP_X_REQUEST_ID']);
-
         $this->assertStringNotContainsString('<script>', $output);
-        $this->assertMatchesRegularExpression('/Request ID: r-[a-f0-9]{12}/', $output);
+        $this->assertMatchesRegularExpression('/Reference ID: r-[a-f0-9]{12}/', $output);
+    }
+
+    public function testFallbackRendererProductionPageShowsMinimalDetails(): void
+    {
+        $_SERVER['HTTP_X_REQUEST_ID'] = 'prod-ref-123';
+
+        $renderer = new FallbackRenderer();
+
+        ob_start();
+        $renderer->renderException(
+            new RuntimeException('Sensitive production message'),
+            'TestApp',
+            false,
+        );
+        $output = (string) ob_get_clean();
+
+        $this->assertStringContainsString('Something went wrong', $output);
+        $this->assertStringContainsString('Reference ID: prod-ref-123', $output);
+        $this->assertStringNotContainsString('Sensitive production message', $output);
+        $this->assertStringNotContainsString('Internal Server Error', $output);
+        $this->assertStringNotContainsString('UTC', $output);
     }
 }
 

@@ -18,14 +18,14 @@ final class FallbackRenderer implements RendererInterface
 
         echo $dev
             ? $this->devExceptionHtml($e, $appName, $this->requestId(), $this->utcNow())
-            : $this->prodGenericHtml($appName, $this->requestId(), $this->utcNow());
+            : $this->prodGenericHtml($appName, $this->requestId());
     }
 
     public function renderGeneric(string $appName): void
     {
         $this->sendHtmlHeaders();
 
-        echo $this->prodGenericHtml($appName, $this->requestId(), $this->utcNow());
+        echo $this->prodGenericHtml($appName, $this->requestId());
     }
 
     public function renderCli(Throwable $e, string $appName, bool $dev): void
@@ -186,11 +186,10 @@ h1{margin:0 0 10px;font-size:18px}
 HTML;
     }
 
-    private function prodGenericHtml(string $appName, string $requestId, string $timestamp): string
+    private function prodGenericHtml(string $appName, string $requestId): string
     {
         $brand = $this->escape($appName);
         $safeRequestId = $this->escape($requestId);
-        $safeTimestamp = $this->escape($timestamp);
 
         return <<<HTML
 <!doctype html>
@@ -226,8 +225,6 @@ body{margin:0;background:linear-gradient(180deg,var(--bg),var(--bg-grad));color:
 h1{margin:0 0 10px;font-size:20px}
 .meta{color:var(--muted);font-size:12px;margin-top:12px}
 .footer{padding:12px 18px;border-top:1px solid var(--border);color:var(--muted);font-size:12px}
-.badge{display:inline-block;margin-top:8px;padding:6px 10px;border-radius:999px;
-       background:color-mix(in oklab, var(--accent) 15%, transparent);color:var(--accent);font-weight:600}
 </style>
 </head>
 <body>
@@ -237,8 +234,7 @@ h1{margin:0 0 10px;font-size:20px}
       <div class="body">
         <h1>Something went wrong</h1>
         <div>Please try again later.</div>
-        <div class="badge">500 Internal Server Error</div>
-        <div class="meta">Request ID: {$safeRequestId} | {$safeTimestamp}</div>
+        <div class="meta">Reference ID: {$safeRequestId}</div>
       </div>
       <div class="footer">&copy; {$brand}</div>
     </div>

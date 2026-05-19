@@ -8,9 +8,9 @@ use Marwa\ErrorHandler\ErrorHandler;
 
 ErrorHandler::bootstrap(
     appName: 'MyApp',
-    env: 'production',     // PROD: no details rendered
-    logger: null,          // no logger injected
-    debugbar: null,         // no debugbar injected
+    env: 'production',      // PROD: no details rendered
+    logFile: __DIR__ . '/../storage/error.log',
+    debugbar: null,
 );
 
 
