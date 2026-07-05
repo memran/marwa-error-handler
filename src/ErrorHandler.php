@@ -209,17 +209,14 @@ final class ErrorHandler
             return;
         }
 
-        $file = $error['file'] ?? null;
-        $line = $error['line'] ?? null;
-
         $this->safeLog('alert', 'fatal_shutdown', [
             '_origin' => 'system',
             'app' => $this->appName,
             'env' => $this->env,
             'errno' => $this->errnoName($error['type']),
             'message' => $error['message'],
-            'file' => $file,
-            'line' => $line,
+            'file' => $error['file'],
+            'line' => $error['line'],
         ]);
 
         if (PHP_SAPI === 'cli') {
@@ -227,8 +224,8 @@ final class ErrorHandler
                 "[fatal][%s] %s @ %s:%s\n",
                 $this->appName,
                 $error['message'],
-                $file ?? '-',
-                (string) ($line ?? 0),
+                $error['file'],
+                (string) $error['line'],
             ));
 
             return;
