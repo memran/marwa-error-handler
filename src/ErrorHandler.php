@@ -33,9 +33,10 @@ final class ErrorHandler
         private ?RendererInterface $renderer = null,
         ?string $logFile = null,
         private ?bool $displayDetails = null,
+        private bool $exitOnError = true,
     ) {
         $this->env = $env;
-        $this->logger ??= $logFile !== null ? new FileLogger($logFile) : null;
+        $this->logger ??= $this->createFileLogger($logFile);
         $this->debugReporter = DebugReporter::from($debugbar);
     }
 
@@ -47,8 +48,9 @@ final class ErrorHandler
         ?RendererInterface $renderer = null,
         ?string $logFile = null,
         ?bool $displayDetails = null,
+        bool $exitOnError = true,
     ): self {
-        $handler = new self($appName, $env, $logger, $debugbar, $renderer, $logFile, $displayDetails);
+        $handler = new self($appName, $env, $logger, $debugbar, $renderer, $logFile, $displayDetails, $exitOnError);
         $handler->register();
 
         return $handler;
@@ -111,7 +113,7 @@ final class ErrorHandler
 
     public function setLogFile(?string $logFile): self
     {
-        $this->logger = $logFile !== null ? new FileLogger($logFile) : null;
+        $this->logger = $this->createFileLogger($logFile);
 
         return $this;
     }
@@ -140,6 +142,19 @@ final class ErrorHandler
         error_reporting(E_ALL);
     }
 
+    private function createFileLogger(?string $logFile): ?FileLogger
+    {
+        if ($logFile === null) {
+            return null;
+        }
+
+        if (str_contains($logFile, '..')) {
+            return null;
+        }
+
+        return new FileLogger($logFile);
+    }
+
     private function handlePhpError(int $errno, string $errstr, ?string $file = null, ?int $line = null): bool
     {
         if ((error_reporting() & $errno) === 0) {
@@ -156,7 +171,7 @@ final class ErrorHandler
             'line' => $line,
         ]);
 
-        return true;
+        return !$this->shouldDisplayDetails();
     }
 
     private function handleException(Throwable $throwable): void
@@ -177,11 +192,13 @@ final class ErrorHandler
 
         if (PHP_SAPI === 'cli') {
             $this->renderer?->renderCli($throwable, $this->appName, $this->shouldDisplayDetails());
-
-            return;
+        } else {
+            $this->renderer?->renderException($throwable, $this->appName, $this->shouldDisplayDetails());
         }
 
-        $this->renderer?->renderException($throwable, $this->appName, $this->shouldDisplayDetails());
+        if ($this->exitOnError) {
+            exit(1);
+        }
     }
 
     private function handleShutdown(): void
@@ -192,14 +209,17 @@ final class ErrorHandler
             return;
         }
 
+        $file = $error['file'] ?? null;
+        $line = $error['line'] ?? null;
+
         $this->safeLog('alert', 'fatal_shutdown', [
             '_origin' => 'system',
             'app' => $this->appName,
             'env' => $this->env,
             'errno' => $this->errnoName($error['type']),
             'message' => $error['message'],
-            'file' => $error['file'],
-            'line' => $error['line'],
+            'file' => $file,
+            'line' => $line,
         ]);
 
         if (PHP_SAPI === 'cli') {
@@ -207,8 +227,8 @@ final class ErrorHandler
                 "[fatal][%s] %s @ %s:%s\n",
                 $this->appName,
                 $error['message'],
-                $error['file'],
-                (string) $error['line'],
+                $file ?? '-',
+                (string) ($line ?? 0),
             ));
 
             return;

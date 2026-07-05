@@ -83,6 +83,7 @@ final class ErrorHandlerTest extends TestCase
                 $reported = $throwable;
             },
             renderer: $renderer,
+            exitOnError: false,
         );
 
         $handler->register();
@@ -114,6 +115,7 @@ final class ErrorHandlerTest extends TestCase
             env: 'development',
             logger: new ThrowingLogger(),
             renderer: $renderer,
+            exitOnError: false,
         );
 
         $handler->register();
@@ -142,6 +144,7 @@ final class ErrorHandlerTest extends TestCase
             env: 'production',
             renderer: $renderer,
             logFile: $logFile,
+            exitOnError: false,
         );
 
         $handler->register();
@@ -177,6 +180,7 @@ final class ErrorHandlerTest extends TestCase
             env: 'development',
             renderer: $renderer,
             displayDetails: false,
+            exitOnError: false,
         );
 
         $handler->register();

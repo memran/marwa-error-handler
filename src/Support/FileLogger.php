@@ -23,7 +23,7 @@ final class FileLogger extends AbstractLogger
         $directory = dirname($this->path);
 
         if ($directory !== '' && $directory !== '.' && !is_dir($directory)) {
-            @mkdir($directory, 0777, true);
+            @mkdir($directory, 0755, true);
         }
 
         $entry = [
